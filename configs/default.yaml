@@ -1,0 +1,14 @@
+game:
+  width: 100 # Width of the board
+  height: 100 # Height of the board
+  gif_length: 100 # Maximal number of iterations to record in output GIF file
+
+# - [X, Y] (coordinates, 1-indexed) ([width, height] respectively) OR
+# - [X1, Y1, X2, Y2] (to "draw" a uniform rectangle of cells)
+# ([X_of_1st_corner, Y_of_1st_corner, X_of_2nd_corner, Y_of_2nd_corner])
+cells:
+  - [5, 5]
+  - [4, 6]
+  - [6, 6]
+  - [5, 7]
+  - [3, 10, 5, 10] # A line of 3 cells

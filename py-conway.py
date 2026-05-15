@@ -7,9 +7,14 @@ os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1" # Suppress pygame welcome message
 import pygame
 
 import conway_graphics as graphics
+import game_of_life as gol
 
-# Lambda that adds 2 vectors positionally
+# Lambdas that adds/subtract 2 vectors positionally
 vectadd = lambda x, y: [x[i] + y[i] for i in range(min(len(x), len(y)))]
+vectsub = lambda x, y: [x[i] - y[i] for i in range(min(len(x), len(y)))]
+
+# Lambda multiplying vector by a scalar
+vectscale = lambda X, s: [x * s for x in X]
 
 def create_parser():
     parser = argparse.ArgumentParser(
@@ -77,10 +82,17 @@ def main(args=None):
     cg = graphics.init(conf["game"]["width"], conf["game"]["height"])
 
     running = True
+    clock = 0
+    game_tick = 1
+    pause = 1
+
     arrowsdown = [0,0,0,0] # left-top-right-bottom
+    mousestatus = [False, (0,0)] # [is_down, last_mouse_pos]
+    screenscale=1.5
     while running: # Main loop
 
         # Handle user events
+        arrowsclicked = [0,0,0,0]
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -89,14 +101,16 @@ def main(args=None):
                 match event.key:
                     case pygame.K_ESCAPE:
                         running = False
+                    case pygame.K_SPACE:
+                        pause = (pause + 1) % 2
                     case pygame.K_LEFT:
-                        arrowsdown[0] = 1
+                        arrowsdown[0] = arrowsclicked[0] = 1
                     case pygame.K_UP:
-                        arrowsdown[1] = 1
+                        arrowsdown[1] = arrowsclicked[1] = 1
                     case pygame.K_RIGHT:
-                        arrowsdown[2] = 1
+                        arrowsdown[2] = arrowsclicked[2] = 1
                     case pygame.K_DOWN:
-                        arrowsdown[3] = 1
+                        arrowsdown[3] = arrowsclicked[3] = 1
 
             elif event.type == pygame.KEYUP:
                 match event.key:
@@ -109,28 +123,65 @@ def main(args=None):
                     case pygame.K_DOWN:
                         arrowsdown[3] = 0
 
-        # Update scroll (5px/tick)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mousestatus[0] = True
+                mousestatus[1] = event.pos
+
+            elif event.type == pygame.MOUSEBUTTONUP:
+                mousestatus[0] = False
+
+            elif event.type == pygame.MOUSEWHEEL:
+                screenscale_old = screenscale
+                screenscale = min(max(screenscale + 0.25*event.y, 1), 2)
+                cg.setconst("scroll", vectscale(cg["scroll"], screenscale_old/screenscale))
+
+        # Update scroll position
         # Note that scroll is written down as movement of the map, rather than camera
         # (i.e. it might seem that the values are inverted)
         scrollchange = [0,0]
-        if arrowsdown[0]:
-            scrollchange[0] += 10
-        if arrowsdown[1]:
-            scrollchange[1] += 10
-        if arrowsdown[2]:
-            scrollchange[0] -= 10
-        if arrowsdown[3]:
-            scrollchange[1] -= 10
+        scrollspeed = 5 * screenscale
+        if arrowsdown[0] or arrowsclicked[0]:
+            scrollchange[0] += scrollspeed
+
+        if arrowsdown[1] or arrowsclicked[1]:
+            scrollchange[1] += scrollspeed
+
+        if arrowsdown[2] or arrowsclicked[2]:
+            scrollchange[0] -= scrollspeed
+
+        if arrowsdown[3] or arrowsclicked[3]:
+            scrollchange[1] -= scrollspeed
+
+        if mousestatus[0]:
+            mouse_pos = pygame.mouse.get_pos()
+            movement = vectsub(mousestatus[1], mouse_pos)
+            scrollchange = vectadd(scrollchange, vectscale(movement, -1/screenscale))
+
+            mousestatus[1] = mouse_pos
 
         cg.setconst("scroll", vectadd(cg["scroll"], scrollchange) )
 
-        (cg@"window").blit(cg@"background", (-cg["cell_size"] + cg["scroll"][0]%cg["cell_size"],
-                                                -cg["cell_size"] + cg["scroll"][1]%cg["cell_size"]))
         graphics.draw_map(cg, map)
-        (cg@"window").blit(cg@"cells", (-cg["cell_size"], -cg["cell_size"]))
+
+        save = False
+        if not pause and clock % game_tick == 0 and clock <= conf["game"]["gif_length"]:
+            save = True
+
+        graphics.refresh_window(cg, screenscale, save_image=save)
         pygame.display.flip()
 
-        time.sleep(0.05)
+        # Update the map
+        if not pause and clock % game_tick == 0:
+            gol.next_generation(map)
+            if clock/game_tick == conf["game"]["gif_length"]:
+                print("Generating GIF image, please wait...")
+                fname = "data/test.gif"
+                graphics.make_gif(cg, fname)
+                print(f"\'{fname}\' saved.")
+
+        if not pause:
+            clock += 1
+        time.sleep(0.1)
 
 
 if __name__ == "__main__":

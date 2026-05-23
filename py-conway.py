@@ -114,6 +114,10 @@ def load_config(config_file):
 
 # Run the program
 def main(args=None):
+    # Each point of speed makes the time between generations twice smaller
+    def calc_game_tick(speed):
+        return 16 / 2**(speed-1)
+
     parser = create_parser() # Command line argument parser
     args = parser.parse_args(args) # Prepare command line arguments
 
@@ -143,8 +147,8 @@ Additionally, gif generation time will be lenghtened.'''
     time_since_generation = 0 # Active (non-paused) ticks since last map update
 
     Clock = pygame.time.Clock() # This controls tick speed (fps)
-    framerate = 12 # Max 12 ticks per second
-    game_tick = 1 + 10 - speed*2 # Each point of speed reduces time between generations by 2 ticks
+    framerate = 15 # Max 15 ticks per second
+    game_tick = calc_game_tick(speed)
     pause = 1 # Start paused
 
     escaped = 0 # If boundary_rule is "open" this tracks number of cells which escaped the map
@@ -191,10 +195,10 @@ Additionally, gif generation time will be lenghtened.'''
 
                     case pygame.K_PAGEUP: # Increase simulation speed
                         speed = max(min(speed+1, 5), 1)
-                        game_tick = 1 + 10 - speed*2
+                        game_tick = calc_game_tick(speed)
                     case pygame.K_PAGEDOWN: # Decrease simulation speed
                         speed = max(min(speed-1, 5), 1)
-                        game_tick = 1 + 10 - speed*2
+                        game_tick = calc_game_tick(speed)
 
 
             elif event.type == pygame.KEYUP: # A keyboard key was released
@@ -264,7 +268,7 @@ Additionally, gif generation time will be lenghtened.'''
         if boundary_rule == "looped": esc = None
         info_end = graphics.info_labels(cg, generation = generation, population = pop, escaped = esc)
 
-        if not pause and time_since_generation == 0 and generation <= gif_length:
+        if not pause and gif and time_since_generation == 0 and generation <= gif_length:
             graphics.store_image(cg) # Save the screen state so we can include it in GIF later
 
         # Simulation speed indicator
@@ -288,7 +292,7 @@ Additionally, gif generation time will be lenghtened.'''
         if not pause and time_since_generation >= game_tick-1:
             escaped += gol.next_generation(map, outsiders, boundary_rule) # Generate next iteration of Game of Life
 
-            if generation == gif_length: # Time to make the GIF
+            if gif and generation == gif_length: # Time to make the GIF
                 # Let's tell the user what's happening, don't want them scratching their head over
                 # random freeze if this takes a while
                 txt = cg["font"].render("Generating GIF image, please wait...", True, (200, 120, 120))

@@ -17,6 +17,11 @@ def make_map(width, height, cell_list):
             x2=cell[2]
             y2=cell[3]
 
+            if x1 > x2:
+                x1, x2 = x2, x1
+            if y1 > y2:
+                y1, y2 = y2, y1
+
             for x in range(x1-1, x2):
                 for y in range(y1-1, y2):
                     map[x][y] = 1

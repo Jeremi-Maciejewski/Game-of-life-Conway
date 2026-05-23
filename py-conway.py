@@ -135,7 +135,7 @@ def main(args=None):
     gif_length = conf["output"].get("gif_length", 100)
     gif_frame_duration = max(conf["output"].get("gif_frame_duration", 100), 1)
 
-    if gif_length > 300: # That's a bit much, might cause issues
+    if gif_length > 500: # That might be a bit much, may cause issues
         message = '''Very high gif length has been selected. Be warned that memory usage grows linearly as generations to be drawn are accumulated.
 This might result in very high memory usage or even lead to system crashes!
 Additionally, gif generation time will be lenghtened.'''

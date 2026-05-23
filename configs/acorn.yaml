@@ -1,0 +1,15 @@
+game:
+  width: 90
+  height: 65
+  boundary_rule: "open"
+
+output:
+  gif: True
+  gif_length: 500
+  gif_frame_duration: 75
+
+cells:
+  - [60, 29, 61, 29]
+  - [61, 27]
+  - [63, 28]
+  - [64, 29, 66, 29]

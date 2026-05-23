@@ -1,6 +1,7 @@
 game:
   width: 50 # Width of the board
   height: 50 # Height of the board
+  boundary_rule: "looped"
 
 output:
   gif: True # Whether to generate a GIF image

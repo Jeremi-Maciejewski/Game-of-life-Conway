@@ -77,10 +77,15 @@ def load_config(config_file):
     # Ensure 'game' section options are valid
     game__width = conf["game"].get("width")
     game__height = conf["game"].get("height")
+    game__boundary_rule = conf["game"].get("boundary_rule")
     if game__width is None:
         raise ValueError(f"In config file \"{config_file}\": Section \'game\': Mandatory option \'width\' is not present!")
     if game__height is None:
         raise ValueError(f"In config file \"{config_file}\": Section \'game\': Mandatory option \'height\' is not present!")
+    if game__boundary_rule is None:
+        conf["game"]["boundary_rule"] = "open"
+    elif game__boundary_rule not in ["open", "looped"]:
+        raise ValueError(f"In config file \"{config_file}\": Section \'game\': The only allowed values of \'boundary_rule\' are \'open\' (cells can escape the map area) or \'looped\' (leaving on one side is equivalent to entering on the other)")
 
     # Ensure 'output' section options are of valid type
     if conf.get("output") is not None:
@@ -113,13 +118,14 @@ def main(args=None):
     args = parser.parse_args(args) # Prepare command line arguments
 
     conf = load_config(args.config) # Parse and validate config
-    map = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"]) # Create map
+    map, outsiders = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"]) # Create map
 
     # Create ConwayGraphics object for current device
     cg = graphics.init(conf["game"]["width"], conf["game"]["height"])
     cg.setconst("largefont", pygame.font.Font(size=40))
 
     # Configurable simulation settings
+    boundary_rule = conf["game"]["boundary_rule"]
     speed = max(min(args.speed, 5), 1)
     gif = conf["output"].get("gif", False)
     gif_length = conf["output"].get("gif_length", 100)
@@ -137,9 +143,11 @@ Additionally, gif generation time will be lenghtened.'''
     time_since_generation = 0 # Active (non-paused) ticks since last map update
 
     Clock = pygame.time.Clock() # This controls tick speed (fps)
-    framerate = 10 # Max 10 ticks per second
+    framerate = 12 # Max 12 ticks per second
     game_tick = 1 + 10 - speed*2 # Each point of speed reduces time between generations by 2 ticks
     pause = 1 # Start paused
+
+    escaped = 0 # If boundary_rule is "open" this tracks number of cells which escaped the map
 
     arrowsdown = [0,0,0,0] # left-top-right-bottom
     mousestatus = [False, (0,0)] # [is_down, last_mouse_pos]
@@ -250,30 +258,35 @@ Additionally, gif generation time will be lenghtened.'''
 
         graphics.draw_map(cg, map) # Draw the cells and map details
         graphics.refresh_window(cg, screenscale) # Blit changes onto main window
-        # Add generation and population counters
-        info_end = graphics.info_labels(cg, generation = generation, population = pop)
+
+        # Add generation, population and escaped cells counters
+        esc = escaped + len(outsiders)
+        if boundary_rule == "looped": esc = None
+        info_end = graphics.info_labels(cg, generation = generation, population = pop, escaped = esc)
 
         if not pause and time_since_generation == 0 and generation <= gif_length:
             graphics.store_image(cg) # Save the screen state so we can include it in GIF later
-
-        elif pause: # Warn the user that the simulation is paused
-            txt = cg["largefont"].render("The simulation is paused. Press SPACE to unpause.", True,
-                                            (200, 200, 200))
-            txt.set_alpha(175)
-            (cg@"window").blit(txt, (((cg@"window").get_width()-txt.get_width())//2, 50))
 
         # Simulation speed indicator
         # This is intentionally drawn AFTER storing the image, making this not visible on GIFs
         txt = cg["font"].render(f"Speed: {speed}", True, (250, 250, 250))
         txt.set_alpha(175)
         (cg@"window").blit(txt, (10, info_end[1]))
+        info_end[0] = max(info_end[0], txt.get_width())
+        info_end[1] += cg["font"].get_linesize()
+
+        if pause: # Warn the user that the simulation is paused
+            txt = cg["largefont"].render("The simulation is paused. Press SPACE to unpause.", True,
+                                            (200, 200, 200))
+            txt.set_alpha(175)
+            (cg@"window").blit(txt, (((cg@"window").get_width()-txt.get_width())//2, max(50, info_end[1])))
 
         pygame.display.flip() # Update the screen
 
 
         # Update the map (this is actually done at the end of previous tick, before the one where next generation starts)
         if not pause and time_since_generation >= game_tick-1:
-            gol.next_generation(map) # Generate next iteration of Game of Life
+            escaped += gol.next_generation(map, outsiders, boundary_rule) # Generate next iteration of Game of Life
 
             if generation == gif_length: # Time to make the GIF
                 # Let's tell the user what's happening, don't want them scratching their head over
@@ -287,7 +300,7 @@ Additionally, gif generation time will be lenghtened.'''
                 graphics.make_gif(cg, args.out, duration=gif_frame_duration)
                 print(f"\'{args.out}\' saved.")
 
-                graphics.clear_images() # We won't need those anymore, so let's not waste memory
+                graphics.clear_images(cg) # We won't need those anymore, so let's not waste memory
 
             generation += 1
             time_since_generation = -1 # Reset this counter (-1 since we're 1 tick early)

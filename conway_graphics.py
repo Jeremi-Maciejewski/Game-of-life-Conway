@@ -125,30 +125,31 @@ def draw_map(graphics_data, map):
                 pygame.draw.circle(gd@"cells", (0,255,0,255), cellpos, gd["cell_size"]-2)
 
 
-def info_labels(graphics_data, generation=None, population=None, color=(250,250,250,175)):
+def info_labels(graphics_data, generation=None, population=None, escaped=None, color=(250,250,250,175)):
     gd = graphics_data
 
-    x = 10
-    y = 10
-    if generation is not None:
-        txt = gd["font"].render(f"Generation: {generation}", True, color)
+    pos = [10, 10]
+    def draw_label(lab, pos):
         if len(color) > 3: txt.set_alpha(color[3])
 
-        (gd@"window").blit(txt, (10, y))
+        (gd@"window").blit(txt, (10, pos[1]))
 
-        y += gd["font"].get_linesize()
-        x += txt.get_width()
+        pos[1] += gd["font"].get_linesize()
+        pos[0] = max(pos[0], txt.get_width())
+
+    if generation is not None:
+        txt = gd["font"].render(f"Generation: {generation}", True, color)
+        draw_label(txt, pos)
 
     if population is not None:
         txt = gd["font"].render(f"Population: {population}", True, color)
-        if len(color) > 3: txt.set_alpha(color[3])
+        draw_label(txt, pos)
 
-        (gd@"window").blit(txt, (10, y))
+    if escaped is not None:
+        txt = gd["font"].render(f"Escaped cells: {escaped}", True, color)
+        draw_label(txt, pos)
 
-        y += gd["font"].get_linesize()
-        x = max(x, 10+txt.get_width())
-
-    return (x, y)
+    return pos
 
 
 # Blits all graphics components onto the main Surface.
@@ -208,7 +209,7 @@ def store_image(graphics_data, surface="window"):
 
 # Remove all stored images
 def clear_images(graphics_data):
-    gd["images"].clear()
+    graphics_data["images"].clear()
 
 
 def make_gif(graphics_data, filename, duration=100):

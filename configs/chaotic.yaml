@@ -1,14 +1,23 @@
 game:
   width: 50 # Width of the board
   height: 50 # Height of the board
-  gif_length: 200 # Maximal number of iterations to record in output GIF file
+
+output:
+  gif: True # Whether to generate a GIF image
+  gif_length: 200 # Number of generations to record in output GIF file
+  gif_frame_duration: 100 # Milliseconds of frame duration (how long a frame stays on-screen before next frame appears)
 
 # - [X, Y] (coordinates, 1-indexed) ([width, height] respectively) OR
 # - [X1, Y1, X2, Y2] (to "draw" a uniform rectangle of cells)
 # ([X_of_1st_corner, Y_of_1st_corner, X_of_2nd_corner, Y_of_2nd_corner])
 cells:
+  - [24, 7] # A singular cell
+  - [23, 8]
+  - [25, 8]
+  - [24, 9]
   - [9, 10, 12, 10] # A line of 4 cells
   - [7, 12, 14, 12]
   - [5, 14, 16, 14]
   - [7, 16, 14, 16]
   - [9, 18, 12, 18]
+  - [15, 34, 20, 40] # A 5x6 rectangle of cells

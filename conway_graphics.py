@@ -45,6 +45,8 @@ def init(width, height):
     info = pygame.display.Info()
     scr_res = (info.current_w, info.current_h) # Screen resolution
 
+    font = pygame.font.Font(size=24)
+
     cs = 10 # Cell size
 
     # The game window will be a square taking up 90% of shorter dimension of the screen,
@@ -78,7 +80,7 @@ def init(width, height):
     cg = ConwayGraphics(win_size, {"window":window, "background":bg, "cells":cells,
                                     "background_scaled":bg},
                         {"map_size":(width, height), "resolution":scr_res, "scroll":initial_scroll,
-                            "cell_size":cs, "last_scale":1})
+                            "cell_size":cs, "last_scale":1, "font":font})
 
     return cg
 
@@ -123,9 +125,35 @@ def draw_map(graphics_data, map):
                 pygame.draw.circle(gd@"cells", (0,255,0,255), cellpos, gd["cell_size"]-2)
 
 
+def info_labels(graphics_data, generation=None, population=None, color=(250,250,250,175)):
+    gd = graphics_data
+
+    x = 10
+    y = 10
+    if generation is not None:
+        txt = gd["font"].render(f"Generation: {generation}", True, color)
+        if len(color) > 3: txt.set_alpha(color[3])
+
+        (gd@"window").blit(txt, (10, y))
+
+        y += gd["font"].get_linesize()
+        x += txt.get_width()
+
+    if population is not None:
+        txt = gd["font"].render(f"Population: {population}", True, color)
+        if len(color) > 3: txt.set_alpha(color[3])
+
+        (gd@"window").blit(txt, (10, y))
+
+        y += gd["font"].get_linesize()
+        x = max(x, 10+txt.get_width())
+
+    return (x, y)
+
+
 # Blits all graphics components onto the main Surface.
 # Note: this does not do pygame.display.flip() - you need to do that yourself after running this function!
-def refresh_window(graphics_data, scale=1, save_image=False):
+def refresh_window(graphics_data, scale=1):
     gd = graphics_data
 
     (gd@"window").fill((0,0,0))
@@ -162,11 +190,25 @@ def refresh_window(graphics_data, scale=1, save_image=False):
 
     gd.setconst("last_scale", scale)
 
-    if save_image:
-        if not gd["images"]:
-            gd.setconst("images", [])
 
-        gd["images"].append(pygame.image.tobytes(gd@"window", "RGB"))
+# Store an image of a surface inside the graphics object
+def store_image(graphics_data, surface="window"):
+    gd = graphics_data
+
+    if type(surface) is pygame.Surface:
+        surf = surface
+    else:
+        surf = gd@surface
+
+    if not gd["images"]:
+        gd.setconst("images", [])
+
+    gd["images"].append(pygame.image.tobytes(surf, "RGB"))
+
+
+# Remove all stored images
+def clear_images(graphics_data):
+    gd["images"].clear()
 
 
 def make_gif(graphics_data, filename, duration=100):

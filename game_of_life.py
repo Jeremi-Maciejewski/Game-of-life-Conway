@@ -1,5 +1,23 @@
 import itertools as itr
 
+def make_map(width, height, cell_list):
+    map = [[0]*height for _ in range(width)] # List of columns (lists of cell statuses in that column o>
+    for cell in cell_list:
+        if len(cell) == 2:
+            map[cell[0]-1][cell[1]-1] = 1
+        elif len(cell) == 4:
+            x1=cell[0]
+            y1=cell[1]
+            x2=cell[2]
+            y2=cell[3]
+
+            for x in range(x1-1, x2):
+                for y in range(y1-1, y2):
+                    map[x][y] = 1
+
+    return map
+
+
 def next_generation(map):
     to_resurrect = []
     to_kill = []

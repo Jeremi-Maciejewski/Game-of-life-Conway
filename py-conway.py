@@ -2,6 +2,7 @@ import os
 import time
 import argparse
 import pathlib
+import warnings
 import yaml
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1" # Suppress pygame welcome message
 import pygame
@@ -18,28 +19,43 @@ vectscale = lambda X, s: [x * s for x in X]
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Symulator Gry w Życie Conwaya"
+        description="Simulator of Conway's Game of Life"
     )
 
-    parser.add_argument( "--config", required=True, help="Ścieżka do pliku YAML definiującego wymiary i układ siatki gry.",
+    parser.add_argument( "--config", required=True, help="Path to a YAML config file defining the size of map, rules of the simulation and some other options.",
     )
 
     parser.add_argument(
+        "-o",
+        "--o",
         "--out",
         default="game.gif",
         type=pathlib.Path,
-        help="Opcjonalnie, ścieżka do wynikowego pliku GIF dokumentującego przebieg symulacji (liczba wynikowych iteracji jest ograniczana poprzez plik konfiguracyjny).",
+        dest="out",
+        help="Optionally, path to an output GIF file which records the simulation (number of shown generations is configured through config file)"
+    )
+
+    parser.add_argument(
+        "-s",
+        "--s",
+        "--speed",
+        default=4,
+        type=int,
+        dest="speed",
+        help="Simulation speed on a scale from 1 to 5.",
     )
 
     return parser
 
 
 def load_config(config_file):
+    # Attempt to read the file
     try:
         f = open(config_file, 'r')
     except OSError:
         raise ValueError(f"The config file \"{config_file}\" could not be opened. Please verify whether the path is valid and whether you have permissions necessary to open it.") from None
 
+    # Attempt to parse YAML
     try:
         conf = yaml.safe_load(f)
     except yaml.YAMLError as e:
@@ -50,138 +66,236 @@ def load_config(config_file):
             suffix += f"\nYAML line {e.problem_mark.line+1}, column {e.problem_mark.column+1}"
         raise ValueError(f"Error while parsing YAML: the data contained within configuration file \"{config_file}\" does not appear to be a valid YAML!{suffix}") from None
 
+
+    # If required sections are not present, raise errors
+    if conf.get("game") is None:
+        raise ValueError(f"In config file \"{config_file}\": Mandatory section \'game\' is not present!")
+    if conf.get("cells") is None:
+        raise ValueError(f"In config file \"{config_file}\": Mandatory section \'cells\' is not present!")
+
+
+    # Ensure 'game' section options are valid
+    game__width = conf["game"].get("width")
+    game__height = conf["game"].get("height")
+    if game__width is None:
+        raise ValueError(f"In config file \"{config_file}\": Section \'game\': Mandatory option \'width\' is not present!")
+    if game__height is None:
+        raise ValueError(f"In config file \"{config_file}\": Section \'game\': Mandatory option \'height\' is not present!")
+
+    # Ensure 'output' section options are of valid type
+    if conf.get("output") is not None:
+        output__gif = conf["output"].get("gif")
+        output__gif_length = conf["output"].get("gif_length")
+        output__gif_frame_duration = conf["output"].get("gif_frame_duration")
+
+        if output__gif is not None:
+            assert type(output__gif) is bool
+        if output__gif_length is not None:
+            assert type(output__gif_length) is int
+        if output__gif_frame_duration is not None:
+            assert type(output__gif_frame_duration) is int
+    else:
+        conf["output"] = {}
+
+    # Ensure 'cells' section entries are valid
+    for idx, entry in enumerate(conf["cells"]):
+        if type(entry) is not list:
+            raise ValueError(f"In config file \"{config_file}\": Section \'cells\': All entries should be lists of integers! Entry number \'{idx+1}\' does not meet this requirement.")
+        if len(entry) not in [2, 4]:
+            raise ValueError(f"In config file \"{config_file}\": Section \'cells\': All entries should be lists of length 2 or 4! Entry number \'{idx+1}\' does not meet this requirement.")
+
     return conf
 
 
-def make_map(width, height, cell_list):
-    map = [[0]*height for _ in range(width)] # List of columns (lists of cell statuses in that column of map, 0 -> dead, 1 -> alive)
-    for cell in cell_list:
-        if len(cell) == 2:
-            map[cell[0]-1][cell[1]-1] = 1
-        elif len(cell) == 4:
-            x1=cell[0]
-            y1=cell[1]
-            x2=cell[2]
-            y2=cell[3]
-
-            for x in range(x1-1, x2):
-                for y in range(y1-1, y2):
-                    map[x][y] = 1
-
-    return map
-
-
+# Run the program
 def main(args=None):
-    parser = create_parser()
-    args = parser.parse_args(args)
+    parser = create_parser() # Command line argument parser
+    args = parser.parse_args(args) # Prepare command line arguments
 
-    conf = load_config(args.config)
-    map = make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"])
+    conf = load_config(args.config) # Parse and validate config
+    map = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"]) # Create map
 
     # Create ConwayGraphics object for current device
     cg = graphics.init(conf["game"]["width"], conf["game"]["height"])
+    cg.setconst("largefont", pygame.font.Font(size=40))
 
-    running = True
-    clock = 0
-    game_tick = 1
-    pause = 1
+    # Configurable simulation settings
+    speed = max(min(args.speed, 5), 1)
+    gif = conf["output"].get("gif", False)
+    gif_length = conf["output"].get("gif_length", 100)
+    gif_frame_duration = max(conf["output"].get("gif_frame_duration", 100), 1)
+
+    if gif_length > 300: # That's a bit much, might cause issues
+        message = '''Very high gif length has been selected. Be warned that memory usage grows linearly as generations to be drawn are accumulated.
+This might result in very high memory usage or even lead to system crashes!
+Additionally, gif generation time will be lenghtened.'''
+        warnings.warn(message)
+
+    running = True # The program only runs as long as this is True
+
+    generation = 0 # Generations counter
+    time_since_generation = 0 # Active (non-paused) ticks since last map update
+
+    Clock = pygame.time.Clock() # This controls tick speed (fps)
+    framerate = 10 # Max 10 ticks per second
+    game_tick = 1 + 10 - speed*2 # Each point of speed reduces time between generations by 2 ticks
+    pause = 1 # Start paused
 
     arrowsdown = [0,0,0,0] # left-top-right-bottom
     mousestatus = [False, (0,0)] # [is_down, last_mouse_pos]
-    screenscale=1.5
-    while running: # Main loop
+    screenscale=1.5 # Zoom multiplier
 
-        # Handle user events
-        arrowsclicked = [0,0,0,0]
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+    ## Main loop
+    while running:
+        ## Handle user events
+        arrowsclicked = [0,0,0,0] # left,top,right,bottom / A,W,D,S
 
-            elif event.type == pygame.KEYDOWN:
-                match event.key:
-                    case pygame.K_ESCAPE:
+        for event in pygame.event.get(): # Loop over every user event which happened since last tick
+            if event.type == pygame.QUIT: # The 'X' in top right corner was clicked
+                running = False # Terminate the program
+
+            elif event.type == pygame.KEYDOWN: # A keyboard key was pressed
+
+                match event.key: # Check which key
+                    case pygame.K_ESCAPE: # ESC terminates the program
                         running = False
-                    case pygame.K_SPACE:
+
+                    case pygame.K_SPACE: # Pause / unpause
                         pause = (pause + 1) % 2
-                    case pygame.K_LEFT:
+
+                    case pygame.K_LEFT | pygame.K_a: # Start scrolling left
                         arrowsdown[0] = arrowsclicked[0] = 1
-                    case pygame.K_UP:
+                    case pygame.K_UP | pygame.K_w: # Start scrolling up
                         arrowsdown[1] = arrowsclicked[1] = 1
-                    case pygame.K_RIGHT:
+                    case pygame.K_RIGHT | pygame.K_d: # Start scrolling right
                         arrowsdown[2] = arrowsclicked[2] = 1
-                    case pygame.K_DOWN:
+                    case pygame.K_DOWN | pygame.K_s: # Start scrolling down
                         arrowsdown[3] = arrowsclicked[3] = 1
 
-            elif event.type == pygame.KEYUP:
-                match event.key:
-                    case pygame.K_LEFT:
+                    case pygame.K_MINUS: # Zoom out
+                        screenscale_old = screenscale
+                        screenscale = min(max(screenscale - 0.25, 1), 2)
+                        cg.setconst("scroll", vectscale(cg["scroll"], screenscale_old/screenscale))
+                    case pygame.K_EQUALS: # Zoom in
+                        screenscale_old = screenscale
+                        screenscale = min(max(screenscale + 0.25, 1), 2)
+                        cg.setconst("scroll", vectscale(cg["scroll"], screenscale_old/screenscale))
+
+                    case pygame.K_PAGEUP: # Increase simulation speed
+                        speed = max(min(speed+1, 5), 1)
+                        game_tick = 1 + 10 - speed*2
+                    case pygame.K_PAGEDOWN: # Decrease simulation speed
+                        speed = max(min(speed-1, 5), 1)
+                        game_tick = 1 + 10 - speed*2
+
+
+            elif event.type == pygame.KEYUP: # A keyboard key was released
+                match event.key: # Check which key
+                    case pygame.K_LEFT | pygame.K_a: # Stop scrolling left
                         arrowsdown[0] = 0
-                    case pygame.K_UP:
+                    case pygame.K_UP | pygame.K_w: # Stop scrolling up
                         arrowsdown[1] = 0
-                    case pygame.K_RIGHT:
+                    case pygame.K_RIGHT | pygame.K_d: # Stop scrolling right
                         arrowsdown[2] = 0
-                    case pygame.K_DOWN:
+                    case pygame.K_DOWN | pygame.K_s: # Stop scrolling down
                         arrowsdown[3] = 0
 
+            # Some mouse button was clicked
+            # Record click + start scroll via mouse dragging
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mousestatus[0] = True
                 mousestatus[1] = event.pos
 
+            # Some mouse button was released
+            # Stop scroll via mouse dragging
             elif event.type == pygame.MOUSEBUTTONUP:
                 mousestatus[0] = False
 
+            # Mouse wheel movement
+            # Zoom in/out via mouse wheel
             elif event.type == pygame.MOUSEWHEEL:
                 screenscale_old = screenscale
                 screenscale = min(max(screenscale + 0.25*event.y, 1), 2)
                 cg.setconst("scroll", vectscale(cg["scroll"], screenscale_old/screenscale))
 
+
         # Update scroll position
         # Note that scroll is written down as movement of the map, rather than camera
         # (i.e. it might seem that the values are inverted)
-        scrollchange = [0,0]
-        scrollspeed = 5 * screenscale
-        if arrowsdown[0] or arrowsclicked[0]:
+        scrollchange = [0,0] # Total change in scroll after applying both keyboard and mouse input
+        scrollspeed = 5 * screenscale # Rate of scrolling via keyboard
+
+        if arrowsdown[0] or arrowsclicked[0]: # Scrolling left via keyboard
             scrollchange[0] += scrollspeed
 
-        if arrowsdown[1] or arrowsclicked[1]:
+        if arrowsdown[1] or arrowsclicked[1]: # Scrolling up via keyboard
             scrollchange[1] += scrollspeed
 
-        if arrowsdown[2] or arrowsclicked[2]:
+        if arrowsdown[2] or arrowsclicked[2]: # Scrolling right via keyboard
             scrollchange[0] -= scrollspeed
 
-        if arrowsdown[3] or arrowsclicked[3]:
+        if arrowsdown[3] or arrowsclicked[3]: # Scrolling down via keyboard
             scrollchange[1] -= scrollspeed
 
-        if mousestatus[0]:
-            mouse_pos = pygame.mouse.get_pos()
-            movement = vectsub(mousestatus[1], mouse_pos)
+        if mousestatus[0]: # Scrolling by dragging with mouse
+            mouse_pos = pygame.mouse.get_pos() # Current mouse position
+            movement = vectsub(mousestatus[1], mouse_pos) # Difference from last recorded mouse position
             scrollchange = vectadd(scrollchange, vectscale(movement, -1/screenscale))
 
-            mousestatus[1] = mouse_pos
+            mousestatus[1] = mouse_pos # Update last recorded mouse position
 
-        cg.setconst("scroll", vectadd(cg["scroll"], scrollchange) )
+        cg.setconst("scroll", vectadd(cg["scroll"], scrollchange) ) # Set the new scroll value
 
-        graphics.draw_map(cg, map)
+        pop = sum([sum(col) for col in map]) # Calculate current population
 
-        save = False
-        if not pause and clock % game_tick == 0 and clock <= conf["game"]["gif_length"]:
-            save = True
+        graphics.draw_map(cg, map) # Draw the cells and map details
+        graphics.refresh_window(cg, screenscale) # Blit changes onto main window
+        # Add generation and population counters
+        info_end = graphics.info_labels(cg, generation = generation, population = pop)
 
-        graphics.refresh_window(cg, screenscale, save_image=save)
-        pygame.display.flip()
+        if not pause and time_since_generation == 0 and generation <= gif_length:
+            graphics.store_image(cg) # Save the screen state so we can include it in GIF later
 
-        # Update the map
-        if not pause and clock % game_tick == 0:
-            gol.next_generation(map)
-            if clock/game_tick == conf["game"]["gif_length"]:
-                print("Generating GIF image, please wait...")
-                fname = "data/test.gif"
-                graphics.make_gif(cg, fname)
-                print(f"\'{fname}\' saved.")
+        elif pause: # Warn the user that the simulation is paused
+            txt = cg["largefont"].render("The simulation is paused. Press SPACE to unpause.", True,
+                                            (200, 200, 200))
+            txt.set_alpha(175)
+            (cg@"window").blit(txt, (((cg@"window").get_width()-txt.get_width())//2, 50))
+
+        # Simulation speed indicator
+        # This is intentionally drawn AFTER storing the image, making this not visible on GIFs
+        txt = cg["font"].render(f"Speed: {speed}", True, (250, 250, 250))
+        txt.set_alpha(175)
+        (cg@"window").blit(txt, (10, info_end[1]))
+
+        pygame.display.flip() # Update the screen
+
+
+        # Update the map (this is actually done at the end of previous tick, before the one where next generation starts)
+        if not pause and time_since_generation >= game_tick-1:
+            gol.next_generation(map) # Generate next iteration of Game of Life
+
+            if generation == gif_length: # Time to make the GIF
+                # Let's tell the user what's happening, don't want them scratching their head over
+                # random freeze if this takes a while
+                txt = cg["font"].render("Generating GIF image, please wait...", True, (200, 120, 120))
+                (cg@"window").blit(txt, (((cg@"window").get_width()-txt.get_width())//2,
+                                            (cg@"window").get_height()-txt.get_height()-20))
+
+                pygame.display.flip() # Update the screen so they can see our message
+
+                graphics.make_gif(cg, args.out, duration=gif_frame_duration)
+                print(f"\'{args.out}\' saved.")
+
+                graphics.clear_images() # We won't need those anymore, so let's not waste memory
+
+            generation += 1
+            time_since_generation = -1 # Reset this counter (-1 since we're 1 tick early)
 
         if not pause:
-            clock += 1
-        time.sleep(0.1)
+            time_since_generation += 1
+
+        Clock.tick(framerate) # That ensures we don't exceed tick speed (fps) cap
 
 
 if __name__ == "__main__":

@@ -10,19 +10,24 @@ import pygame
 import conway_graphics as graphics
 import game_of_life as gol
 
-# Lambdas that adds/subtract 2 vectors positionally
+# Lambdas that add/subtract 2 vectors positionally
 vectadd = lambda x, y: [x[i] + y[i] for i in range(min(len(x), len(y)))]
 vectsub = lambda x, y: [x[i] - y[i] for i in range(min(len(x), len(y)))]
 
 # Lambda multiplying vector by a scalar
 vectscale = lambda X, s: [x * s for x in X]
 
+# Create command line arguments parser for this program
+# returns: an argparse.ArgumentParser object
 def create_parser():
     parser = argparse.ArgumentParser(
         description="Simulator of Conway's Game of Life"
     )
 
-    parser.add_argument( "--config", required=True, help="Path to a YAML config file defining the size of map, rules of the simulation and some other options.",
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Path to a YAML config file defining the size of map, rules of the simulation and some other options.",
     )
 
     parser.add_argument(
@@ -48,17 +53,22 @@ def create_parser():
     return parser
 
 
+# Load configuration for this program from a YAML file
+# Arguments:
+#   config_file - (str) Path to file to be read
+#
+# returns: A dict representing validated config
 def load_config(config_file):
     # Attempt to read the file
     try:
         f = open(config_file, 'r')
-    except OSError:
+    except OSError: # This happens if file does not exist or cannot be read for other reasons
         raise ValueError(f"The config file \"{config_file}\" could not be opened. Please verify whether the path is valid and whether you have permissions necessary to open it.") from None
 
     # Attempt to parse YAML
     try:
         conf = yaml.safe_load(f)
-    except yaml.YAMLError as e:
+    except yaml.YAMLError as e: # This happens if YAML syntax is violated
         suffix = ""
         if hasattr(e, "problem"):
             suffix += f"\nError description: \"{e.problem}\""
@@ -113,7 +123,12 @@ def load_config(config_file):
 
 
 # Run the program
+# Arguments:
+#   args - (list) an optional list of arguments for the command line parser, as accepted by
+#                   argparse.ArgumentParser.parse_args(). If not specified or None, arguments are fetched
+#                   from sys.argv (actual command line input).
 def main(args=None):
+    # Convert speed "points" to length (in program ticks) of a game tick (1 generation)
     # Each point of speed makes the time between generations twice smaller
     def calc_game_tick(speed):
         return 16 / 2**(speed-1)
@@ -125,18 +140,19 @@ def main(args=None):
 
     # Create ConwayGraphics object for current device
     cg = graphics.init(conf["game"]["width"], conf["game"]["height"])
-    cg.setconst("largefont", pygame.font.Font(size=40))
+    cg.setconst("largefont", pygame.font.Font(size=40)) # Additional, large font
 
-    map, outsiders = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"], cg) # Create map
+    # Create map
+    map, outsiders = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"], cg)
 
     # Configurable simulation settings
-    boundary_rule = conf["game"]["boundary_rule"]
-    speed = max(min(args.speed, 5), 1)
-    gif = conf["output"].get("gif", False)
-    gif_length = conf["output"].get("gif_length", 100)
-    gif_frame_duration = max(conf["output"].get("gif_frame_duration", 100), 1)
+    boundary_rule = conf["game"]["boundary_rule"] # What happens when cell leaves map
+    speed = max(min(args.speed, 5), 1) # Speed "points" in range 1-5
+    gif = conf["output"].get("gif", False) # Whether to generate a gif
+    gif_length = conf["output"].get("gif_length", 100) # How many frames (generations) should the gif show
+    gif_frame_duration = max(conf["output"].get("gif_frame_duration", 100), 1) # Time between gif frames in milliseconds (not less than 1)
 
-    if gif_length > 500: # That might be a bit much, may cause issues
+    if gif_length > 500: # That might be a bit many frames, may cause issues
         message = '''Very high gif length has been selected. Be warned that memory usage grows linearly as generations to be drawn are accumulated.
 This might result in very high memory usage or even lead to system crashes!
 Additionally, gif generation time will be lenghtened.'''
@@ -316,5 +332,6 @@ Additionally, gif generation time will be lenghtened.'''
         Clock.tick(framerate) # That ensures we don't exceed tick speed (fps) cap
 
 
+# If the program was ran directly, (rather than imported) execute main
 if __name__ == "__main__":
     main()

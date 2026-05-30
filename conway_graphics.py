@@ -1,5 +1,6 @@
 import os
 import math
+import random
 from PIL import Image
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1" # Suppress pygame welcome message
 import pygame
@@ -77,10 +78,41 @@ def init(width, height):
         # Horizontal
         pygame.draw.line(bg, mesh_color, (0, pos-1), (win_size+cs*2, pos-1), 2)
 
+    # Draw some cell sprites
+    sprites = []
+    for _ in range(25):
+        csurf = pygame.Surface((cs*2-4, cs*2-4)).convert_alpha()
+        R = csurf.get_rect()
+
+        cell_l = random.randint(0, R.center[0]//2)
+        cell_t = random.randint(0, R.center[1]//2)
+
+        max_w = min(R.width, R.right - cell_l)
+        max_h = min(R.height, R.bottom - cell_t, max_w*5//3)
+
+        cell_w = random.randint(R.width*3//4, max_w)
+        cell_h = random.randint(R.height*3//4, max_h)
+
+        membrane = pygame.Rect(cell_l, cell_t, cell_w, cell_h)
+        cytoplasm = membrane.copy()
+        cytoplasm.top += 2
+        cytoplasm.left += 2
+        cytoplasm.width -= 4
+        cytoplasm.height -= 4
+
+        csurf.fill((0,0,0,0))
+        pygame.draw.ellipse(csurf, (0, 200, 0, 200), membrane)
+        pygame.draw.ellipse(csurf, (0, 255, 0, 255), cytoplasm)
+
+        sprites.append(csurf)
+
+    spritemap = [[0]*height for _ in range(width)]
+
     cg = ConwayGraphics(win_size, {"window":window, "background":bg, "cells":cells,
                                     "background_scaled":bg},
                         {"map_size":(width, height), "resolution":scr_res, "scroll":initial_scroll,
-                            "cell_size":cs, "last_scale":1, "font":font})
+                            "cell_size":cs, "last_scale":1, "font":font, "sprites":sprites,
+                            "spritemap":spritemap})
 
     return cg
 
@@ -119,10 +151,13 @@ def draw_map(graphics_data, map):
     for x in range(len(map)):
         for y in range(len(map[x])):
             if map[x][y] == 1:
-                cellpos = (round(x*gd["cell_size"] + gd["cell_size"]/2 + gd["scroll"][0]),
-                            round(y*gd["cell_size"] + gd["cell_size"]/2 + gd["scroll"][1]))
+                sprite = gd["sprites"][gd["spritemap"][x][y]]
+                cellpos = (round(x*gd["cell_size"] + gd["scroll"][0] +\
+                                    gd["cell_size"]/2 - sprite.get_width()/4),
+                            round(y*gd["cell_size"] + gd["scroll"][1] +\
+                                    gd["cell_size"]/2 - sprite.get_height()/4))
                 cellpos = vectscale(cellpos, 2) # Multiply to account for higher resolution
-                pygame.draw.circle(gd@"cells", (0,255,0,255), cellpos, gd["cell_size"]-2)
+                (gd@"cells").blit(sprite, cellpos)
 
 
 def info_labels(graphics_data, generation=None, population=None, escaped=None, color=(250,250,250,175)):

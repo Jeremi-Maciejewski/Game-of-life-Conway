@@ -1,4 +1,5 @@
 import itertools as itr
+import random
 
 # Constant with all 1 cell offsets from a position
 neighbour_vects = list(itr.product((-1, 0, 1), repeat=2))
@@ -6,11 +7,14 @@ neighbour_vects.remove((0,0))
 
 vectadd = lambda x, y: [x[i] + y[i] for i in range(min(len(x), len(y)))]
 
-def make_map(width, height, cell_list):
+def make_map(width, height, cell_list, graphics_data=None):
     map = [[0]*height for _ in range(width)] # List of columns (lists of cell statuses in that column o>
     for cell in cell_list:
         if len(cell) == 2:
             map[cell[0]-1][cell[1]-1] = 1
+            if graphics_data is not None:
+                graphics_data["spritemap"][cell[0]-1][cell[1]-1] = random.randrange(len(graphics_data["sprites"]))
+
         elif len(cell) == 4:
             x1=cell[0]
             y1=cell[1]
@@ -25,11 +29,13 @@ def make_map(width, height, cell_list):
             for x in range(x1-1, x2):
                 for y in range(y1-1, y2):
                     map[x][y] = 1
+                    if graphics_data is not None:
+                        graphics_data["spritemap"][x][y] = random.randrange(len(graphics_data["sprites"]))
 
     return map, {}
 
 
-def next_generation(map, outsiders, boundary_rule):
+def next_generation(map, outsiders, boundary_rule, graphics_data=None):
     global neighbour_vects
 
     to_resurrect = []
@@ -112,7 +118,11 @@ def next_generation(map, outsiders, boundary_rule):
     for cell in to_kill:
         map[cell[0]][cell[1]] = 0
     for cell in to_resurrect:
+        if map[cell[0]][cell[1]] == 1: continue
+
         map[cell[0]][cell[1]] = 1
+        if graphics_data is not None:
+            graphics_data["spritemap"][cell[0]][cell[1]] = random.randrange(len(graphics_data["sprites"]))
 
     # Update outsiders
     outsiders.clear()

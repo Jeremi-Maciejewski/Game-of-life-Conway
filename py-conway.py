@@ -122,11 +122,12 @@ def main(args=None):
     args = parser.parse_args(args) # Prepare command line arguments
 
     conf = load_config(args.config) # Parse and validate config
-    map, outsiders = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"]) # Create map
 
     # Create ConwayGraphics object for current device
     cg = graphics.init(conf["game"]["width"], conf["game"]["height"])
     cg.setconst("largefont", pygame.font.Font(size=40))
+
+    map, outsiders = gol.make_map(conf["game"]["width"], conf["game"]["height"], conf["cells"], cg) # Create map
 
     # Configurable simulation settings
     boundary_rule = conf["game"]["boundary_rule"]
@@ -290,7 +291,7 @@ Additionally, gif generation time will be lenghtened.'''
 
         # Update the map (this is actually done at the end of previous tick, before the one where next generation starts)
         if not pause and time_since_generation >= game_tick-1:
-            escaped += gol.next_generation(map, outsiders, boundary_rule) # Generate next iteration of Game of Life
+            escaped += gol.next_generation(map, outsiders, boundary_rule, cg) # Generate next iteration of Game of Life
 
             if gif and generation == gif_length: # Time to make the GIF
                 # Let's tell the user what's happening, don't want them scratching their head over

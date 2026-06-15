@@ -21,4 +21,4 @@ cells:
   - [5, 14, 16, 14]
   - [7, 16, 14, 16]
   - [9, 18, 12, 18]
-  - [15, 34, 20, 40] # A 5x6 rectangle of cells
+  - [15, 34, 20, 40] # A 6x7 rectangle of cells
